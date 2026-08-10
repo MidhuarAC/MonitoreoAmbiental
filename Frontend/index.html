@@ -1900,7 +1900,7 @@ async function obtenerDatos(
 
 
         console.log(
-            "✅ Datos obtenidos desde PostgreSQL/Render:",
+            "✅ Datos obtenidos desde API:",
             resultado.datos?.length
         );
 
@@ -1911,14 +1911,18 @@ async function obtenerDatos(
 
 
     // ======================================================
-    // 2. SI FALLA INTERNET / RENDER → USAR INDEXEDDB
+    // 2. SI FALLA LA API → CONSULTAR INDEXEDDB
     // ======================================================
 
     catch (error) {
 
         console.warn(
-            "⚠️ API no disponible. Usando datos offline...",
+            "⚠️ API no disponible.",
             error
+        );
+
+        console.log(
+            "📦 Consultando datos offline..."
         );
 
 
@@ -1929,90 +1933,97 @@ async function obtenerDatos(
 
 
             console.log(
-                "📦 Mediciones disponibles offline:",
+                "📦 Total datos offline:",
                 datosOffline.length
             );
 
 
-            if (
-                !Array.isArray(datosOffline) ||
-                datosOffline.length === 0
-            ) {
+            // ==================================================
+            // MAPEO DEL PARAMETRO DEL SELECT
+            // ==================================================
 
-                throw new Error(
-                    "No existen mediciones guardadas offline."
-                );
+            const mapaParametros = {
 
-            }
+                "ph":
+                    "ph",
+
+                "pH":
+                    "ph",
+
+                "conductividad":
+                    "conductividad",
+
+                "Conductividad":
+                    "conductividad",
+
+                "caudal":
+                    "caudal",
+
+                "Caudal":
+                    "caudal",
+
+                "tds":
+                    "tds",
+
+                "TDS":
+                    "tds",
+
+                "od":
+                    "od",
+
+                "OD":
+                    "od",
+
+                "turbidez":
+                    "turbidez",
+
+                "Turbidez":
+                    "turbidez"
+
+            };
+
+
+            const campoParametro =
+                mapaParametros[parametro] ||
+                String(parametro).toLowerCase();
+
+
+            console.log(
+                "🔎 Estación:",
+                estacion
+            );
+
+            console.log(
+                "🔎 Parámetro seleccionado:",
+                parametro
+            );
+
+            console.log(
+                "🔎 Campo utilizado:",
+                campoParametro
+            );
 
 
             // ==================================================
-            // FUNCIONES AUXILIARES PARA IDENTIFICAR CAMPOS
+            // FECHAS
             // ==================================================
 
-            function obtenerEstacionDato(dato) {
-
-                return (
-                    dato.estacion ??
-                    dato.codigo_estacion ??
-                    dato.codigoEstacion ??
-                    dato.codigo ??
-                    dato.punto_monitoreo ??
-                    dato.puntoMonitoreo ??
-                    dato.station ??
-                    ""
-                );
-
-            }
-
-
-            function obtenerParametroDato(dato) {
-
-                return (
-                    dato.parametro ??
-                    dato.parameter ??
-                    dato.tipo_parametro ??
-                    dato.tipoParametro ??
-                    ""
-                );
-
-            }
-
-
-            function obtenerFechaDato(dato) {
-
-                return (
-                    dato.fecha_hora ??
-                    dato.fechaHora ??
-                    dato.fecha ??
-                    dato.datetime ??
-                    dato.timestamp ??
-                    dato.fecha_medicion ??
-                    dato.fechaMedicion ??
-                    ""
-                );
-
-            }
-
-
-            // ==================================================
-            // CONVERTIR FECHAS
-            // ==================================================
-
-            const inicio =
+            const fechaInicial =
                 new Date(
-                    fechaInicio + "T00:00:00"
+                    fechaInicio +
+                    "T00:00:00"
                 );
 
 
-            const fin =
+            const fechaFinal =
                 new Date(
-                    fechaFin + "T23:59:59"
+                    fechaFin +
+                    "T23:59:59"
                 );
 
 
             // ==================================================
-            // FILTRAR DATOS OFFLINE
+            // FILTRAR
             // ==================================================
 
             const datosFiltrados =
@@ -2020,100 +2031,153 @@ async function obtenerDatos(
 
                     const estacionDato =
                         String(
-                            obtenerEstacionDato(dato)
-                        ).trim().toLowerCase();
+                            dato.estacion ?? ""
+                        )
+                        .trim()
+                        .toLowerCase();
 
 
-                    const estacionBuscada =
+                    const estacionSeleccionada =
                         String(
                             estacion
-                        ).trim().toLowerCase();
-
-
-                    const parametroDato =
-                        String(
-                            obtenerParametroDato(dato)
-                        ).trim().toLowerCase();
-
-
-                    const parametroBuscado =
-                        String(
-                            parametro
-                        ).trim().toLowerCase();
-
-
-                    const fechaDatoTexto =
-                        obtenerFechaDato(dato);
+                        )
+                        .trim()
+                        .toLowerCase();
 
 
                     const fechaDato =
                         new Date(
-                            fechaDatoTexto
+                            dato.fecha_hora
                         );
 
 
                     const coincideEstacion =
                         estacionDato ===
-                        estacionBuscada;
-
-
-                    const coincideParametro =
-                        parametroDato ===
-                        parametroBuscado;
+                        estacionSeleccionada;
 
 
                     const coincideFecha =
-                        !isNaN(fechaDato.getTime()) &&
-                        fechaDato >= inicio &&
-                        fechaDato <= fin;
+                        !isNaN(
+                            fechaDato.getTime()
+                        ) &&
+                        fechaDato >=
+                        fechaInicial &&
+                        fechaDato <=
+                        fechaFinal;
+
+
+                    const valor =
+                        dato[campoParametro];
+
+
+                    const tieneValor =
+                        valor !== null &&
+                        valor !== undefined &&
+                        valor !== "";
 
 
                     return (
                         coincideEstacion &&
-                        coincideParametro &&
-                        coincideFecha
+                        coincideFecha &&
+                        tieneValor
                     );
 
                 });
 
 
             console.log(
-                "📦 Datos filtrados offline:",
+                "📊 Mediciones filtradas offline:",
                 datosFiltrados.length
             );
 
 
             // ==================================================
-            // DEVOLVER MISMA ESTRUCTURA QUE LA API
+            // TRANSFORMAR DATOS PARA EL GRAFICO
+            // ==================================================
+
+            const datosResultado =
+                datosFiltrados.map(dato => {
+
+                    return {
+
+                        estacion:
+                            dato.estacion,
+
+                        nombre_estacion:
+                            dato.nombre_estacion,
+
+                        fecha_hora:
+                            dato.fecha_hora,
+
+                        parametro:
+                            parametro,
+
+                        valor:
+                            Number(
+                                dato[campoParametro]
+                            ),
+
+                        // Mantener también
+                        // los datos originales
+
+                        ph:
+                            dato.ph,
+
+                        conductividad:
+                            dato.conductividad,
+
+                        caudal:
+                            dato.caudal,
+
+                        tds:
+                            dato.tds,
+
+                        od:
+                            dato.od,
+
+                        turbidez:
+                            dato.turbidez,
+
+                        id:
+                            dato.id
+
+                    };
+
+                });
+
+
+            // ==================================================
+            // DEVOLVER MISMA ESTRUCTURA GENERAL DE LA API
             // ==================================================
 
             return {
 
-                estado: "OK",
+                estado:
+                    "OK",
 
-                origen: "offline",
+                origen:
+                    "offline",
 
                 total:
-                    datosFiltrados.length,
+                    datosResultado.length,
 
                 datos:
-                    datosFiltrados
+                    datosResultado
 
             };
 
         }
 
-
         catch (errorOffline) {
 
             console.error(
-                "❌ Error consultando datos offline:",
+                "❌ Error consultando IndexedDB:",
                 errorOffline
             );
 
 
             throw new Error(
-                "No se pudo consultar ni en Render ni en los datos offline."
+                "No se pudo consultar ni la API ni los datos offline."
             );
 
         }
