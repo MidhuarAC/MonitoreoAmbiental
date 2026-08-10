@@ -1127,6 +1127,41 @@ let ultimaConsulta = null;
 
 let archivoSeleccionado = null;
 
+
+// ==========================================================
+// ESTADO DE CONEXIÓN
+// ==========================================================
+
+let modoOffline = !navigator.onLine;
+
+
+window.addEventListener("offline", function() {
+
+    modoOffline = true;
+
+    console.log("📴 SIN INTERNET");
+
+    if (typeof mostrarEstado === "function") {
+        mostrarEstado(
+            "📴 Sin internet. Se utilizarán los datos guardados offline."
+        );
+    }
+
+});
+
+
+window.addEventListener("online", function() {
+
+    modoOffline = false;
+
+    console.log("🌐 INTERNET DISPONIBLE");
+
+    if (typeof mostrarEstado === "function") {
+        mostrarEstado("🌐 Internet disponible.");
+    }
+
+});
+
 // ==========================================================
 // BASE LOCAL OFFLINE
 // ==========================================================
@@ -1715,7 +1750,7 @@ async function cargarEstaciones() {
     }
 
 }
-
+}
 
 
 // ==========================================================
@@ -1832,349 +1867,236 @@ async function obtenerDatos(
     resolucion
 ) {
 
-    const url =
-        `${API_URL}/api/mediciones` +
-
-        `?estacion=${
-            encodeURIComponent(estacion)
-        }` +
-
-        `&parametro=${
-            encodeURIComponent(parametro)
-        }` +
-
-        `&fecha_inicio=${
-            encodeURIComponent(
-                fechaInicio + "T00:00:00"
-            )
-        }` +
-
-        `&fecha_fin=${
-            encodeURIComponent(
-                fechaFin + "T23:59:59"
-            )
-        }` +
-
-        `&resolucion=${
-            encodeURIComponent(resolucion)
-        }`;
-
-
-    console.log(
-        "Consultando:",
-        url
-    );
-
-
     // ======================================================
-    // 1. INTENTAR CONSULTAR LA API
+    // CONSULTA DESDE INDEXEDDB
     // ======================================================
 
-    try {
+    async function consultarOffline() {
 
-        const respuesta =
-            await fetch(url);
+        console.log("📴 CONSULTANDO INDEXEDDB OFFLINE...");
 
-
-        if (!respuesta.ok) {
-
-            throw new Error(
-                `Error HTTP ${respuesta.status}`
-            );
-
-        }
-
-
-        const resultado =
-            await respuesta.json();
-
-
-        if (resultado.estado !== "OK") {
-
-            throw new Error(
-                resultado.detalle ||
-                "Error consultando datos."
-            );
-
-        }
-
+        const datosOffline = await obtenerMedicionesOffline();
 
         console.log(
-            "✅ Datos obtenidos desde API:",
-            resultado.datos?.length
+            "📦 Total de datos offline:",
+            datosOffline.length
         );
 
+        const mapaParametros = {
+            "pH": "ph",
+            "ph": "ph",
+            "Conductividad": "conductividad",
+            "conductividad": "conductividad",
+            "Caudal": "caudal",
+            "caudal": "caudal",
+            "TDS": "tds",
+            "tds": "tds",
+            "OD": "od",
+            "od": "od",
+            "Turbidez": "turbidez",
+            "turbidez": "turbidez"
+        };
 
-        return resultado;
+        const campoParametro =
+            mapaParametros[parametro] ||
+            String(parametro).toLowerCase();
+
+        console.log("📍 Estación:", estacion);
+        console.log("📊 Parámetro:", parametro);
+        console.log("🔎 Campo:", campoParametro);
+
+        const fechaInicial = new Date(fechaInicio + "T00:00:00");
+        const fechaFinal = new Date(fechaFin + "T23:59:59");
+
+        const estacionSeleccionada =
+            String(estacion).trim().toLowerCase();
+
+        const datosFiltrados = datosOffline.filter(dato => {
+
+            const estacionDato =
+                String(dato.estacion ?? "")
+                    .trim()
+                    .toLowerCase();
+
+            const fechaDato = new Date(dato.fecha_hora);
+
+            const coincideEstacion =
+                estacionDato === estacionSeleccionada;
+
+            const coincideFecha =
+                !isNaN(fechaDato.getTime()) &&
+                fechaDato >= fechaInicial &&
+                fechaDato <= fechaFinal;
+
+            const valor = dato[campoParametro];
+
+            const tieneValor =
+                valor !== null &&
+                valor !== undefined &&
+                valor !== "";
+
+            return (
+                coincideEstacion &&
+                coincideFecha &&
+                tieneValor
+            );
+
+        });
+
+        console.log(
+            "📊 Mediciones encontradas offline:",
+            datosFiltrados.length
+        );
+
+        const datosResultado = datosFiltrados.map(dato => ({
+
+            estacion: dato.estacion,
+
+            nombre_estacion: dato.nombre_estacion,
+
+            fecha_hora: dato.fecha_hora,
+
+            parametro: parametro,
+
+            valor: Number(dato[campoParametro]),
+
+            ph: dato.ph,
+
+            conductividad: dato.conductividad,
+
+            caudal: dato.caudal,
+
+            tds: dato.tds,
+
+            od: dato.od,
+
+            turbidez: dato.turbidez,
+
+            id: dato.id
+
+        }));
+
+        return {
+
+            estado: "OK",
+
+            origen: "offline",
+
+            estacion: estacion,
+
+            parametro: parametro,
+
+            fecha_inicio: fechaInicio,
+
+            fecha_fin: fechaFin,
+
+            resolucion: resolucion,
+
+            total: datosResultado.length,
+
+            datos: datosResultado
+
+        };
 
     }
 
 
     // ======================================================
-    // 2. SI FALLA LA API → CONSULTAR INDEXEDDB
+    // SI ESTAMOS OFFLINE
+    // ======================================================
+
+    if (modoOffline || !navigator.onLine) {
+
+        console.log(
+            "📴 SIN INTERNET → NO SE USARÁ FETCH"
+        );
+
+        modoOffline = true;
+
+        return await consultarOffline();
+
+    }
+
+
+    // ======================================================
+    // CONSTRUIR URL API
+    // ======================================================
+
+    const url =
+        `${API_URL}/api/mediciones` +
+        `?estacion=${encodeURIComponent(estacion)}` +
+        `&parametro=${encodeURIComponent(parametro)}` +
+        `&fecha_inicio=${encodeURIComponent(fechaInicio + "T00:00:00")}` +
+        `&fecha_fin=${encodeURIComponent(fechaFin + "T23:59:59")}` +
+        `&resolucion=${encodeURIComponent(resolucion)}`;
+
+    console.log("🌐 CONSULTANDO API:", url);
+
+
+    // ======================================================
+    // CONSULTAR API
+    // ======================================================
+
+    try {
+
+        const respuesta = await fetch(url, {
+            method: "GET",
+            cache: "no-store"
+        });
+
+        if (!respuesta.ok) {
+            throw new Error(
+                `Error HTTP ${respuesta.status}`
+            );
+        }
+
+        const resultado = await respuesta.json();
+
+        if (resultado.estado !== "OK") {
+            throw new Error(
+                resultado.detalle ||
+                "Error consultando datos."
+            );
+        }
+
+        console.log(
+            "✅ DATOS OBTENIDOS DESDE API:",
+            resultado.datos?.length
+        );
+
+        return resultado;
+
+    }
+
+    // ======================================================
+    // SI FALLA INTERNET → INDEXEDDB
     // ======================================================
 
     catch (error) {
 
         console.warn(
-            "⚠️ API no disponible.",
+            "⚠️ API NO DISPONIBLE:",
             error
         );
 
         console.log(
-            "📦 Consultando datos offline..."
+            "📴 CAMBIANDO AUTOMÁTICAMENTE A OFFLINE..."
         );
 
+        modoOffline = true;
 
         try {
 
-            const datosOffline =
-                await obtenerMedicionesOffline();
-
-
-            console.log(
-                "📦 Total datos offline:",
-                datosOffline.length
-            );
-
-
-            // ==================================================
-            // MAPEO DEL PARAMETRO DEL SELECT
-            // ==================================================
-
-            const mapaParametros = {
-
-                "ph":
-                    "ph",
-
-                "pH":
-                    "ph",
-
-                "conductividad":
-                    "conductividad",
-
-                "Conductividad":
-                    "conductividad",
-
-                "caudal":
-                    "caudal",
-
-                "Caudal":
-                    "caudal",
-
-                "tds":
-                    "tds",
-
-                "TDS":
-                    "tds",
-
-                "od":
-                    "od",
-
-                "OD":
-                    "od",
-
-                "turbidez":
-                    "turbidez",
-
-                "Turbidez":
-                    "turbidez"
-
-            };
-
-
-            const campoParametro =
-                mapaParametros[parametro] ||
-                String(parametro).toLowerCase();
-
-
-            console.log(
-                "🔎 Estación:",
-                estacion
-            );
-
-            console.log(
-                "🔎 Parámetro seleccionado:",
-                parametro
-            );
-
-            console.log(
-                "🔎 Campo utilizado:",
-                campoParametro
-            );
-
-
-            // ==================================================
-            // FECHAS
-            // ==================================================
-
-            const fechaInicial =
-                new Date(
-                    fechaInicio +
-                    "T00:00:00"
-                );
-
-
-            const fechaFinal =
-                new Date(
-                    fechaFin +
-                    "T23:59:59"
-                );
-
-
-            // ==================================================
-            // FILTRAR
-            // ==================================================
-
-            const datosFiltrados =
-                datosOffline.filter(dato => {
-
-                    const estacionDato =
-                        String(
-                            dato.estacion ?? ""
-                        )
-                        .trim()
-                        .toLowerCase();
-
-
-                    const estacionSeleccionada =
-                        String(
-                            estacion
-                        )
-                        .trim()
-                        .toLowerCase();
-
-
-                    const fechaDato =
-                        new Date(
-                            dato.fecha_hora
-                        );
-
-
-                    const coincideEstacion =
-                        estacionDato ===
-                        estacionSeleccionada;
-
-
-                    const coincideFecha =
-                        !isNaN(
-                            fechaDato.getTime()
-                        ) &&
-                        fechaDato >=
-                        fechaInicial &&
-                        fechaDato <=
-                        fechaFinal;
-
-
-                    const valor =
-                        dato[campoParametro];
-
-
-                    const tieneValor =
-                        valor !== null &&
-                        valor !== undefined &&
-                        valor !== "";
-
-
-                    return (
-                        coincideEstacion &&
-                        coincideFecha &&
-                        tieneValor
-                    );
-
-                });
-
-
-            console.log(
-                "📊 Mediciones filtradas offline:",
-                datosFiltrados.length
-            );
-
-
-            // ==================================================
-            // TRANSFORMAR DATOS PARA EL GRAFICO
-            // ==================================================
-
-            const datosResultado =
-                datosFiltrados.map(dato => {
-
-                    return {
-
-                        estacion:
-                            dato.estacion,
-
-                        nombre_estacion:
-                            dato.nombre_estacion,
-
-                        fecha_hora:
-                            dato.fecha_hora,
-
-                        parametro:
-                            parametro,
-
-                        valor:
-                            Number(
-                                dato[campoParametro]
-                            ),
-
-                        // Mantener también
-                        // los datos originales
-
-                        ph:
-                            dato.ph,
-
-                        conductividad:
-                            dato.conductividad,
-
-                        caudal:
-                            dato.caudal,
-
-                        tds:
-                            dato.tds,
-
-                        od:
-                            dato.od,
-
-                        turbidez:
-                            dato.turbidez,
-
-                        id:
-                            dato.id
-
-                    };
-
-                });
-
-
-            // ==================================================
-            // DEVOLVER MISMA ESTRUCTURA GENERAL DE LA API
-            // ==================================================
-
-            return {
-
-                estado:
-                    "OK",
-
-                origen:
-                    "offline",
-
-                total:
-                    datosResultado.length,
-
-                datos:
-                    datosResultado
-
-            };
+            return await consultarOffline();
 
         }
 
         catch (errorOffline) {
 
             console.error(
-                "❌ Error consultando IndexedDB:",
+                "❌ ERROR INDEXEDDB:",
                 errorOffline
             );
-
 
             throw new Error(
                 "No se pudo consultar ni la API ni los datos offline."
@@ -2267,7 +2189,7 @@ async function consultarDatos() {
         // MODO OFFLINE
         // ==================================================
 
-        if (!navigator.onLine) {
+        if (modoOffline || !navigator.onLine) {
 
             console.log(
                 "📴 SIN INTERNET → CONSULTANDO INDEXEDDB"

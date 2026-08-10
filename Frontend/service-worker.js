@@ -1,85 +1,143 @@
-const CACHE_NAME = 'monitoreo-ambiental-v2';
+// ==========================================================
+// SERVICE WORKER - MONITOREO AMBIENTAL
+// ==========================================================
 
-const ARCHIVOS = [
+const CACHE_NAME = "monitoreo-ambiental-v2";
+
+
+// ==========================================================
+// ARCHIVOS ESTÁTICOS
+// ==========================================================
+
+const ARCHIVOS_CACHE = [
     "/",
-    "/manifest.json",
-    "/service-worker.js"
+    "/index.html",
+    "/manifest.json"
 ];
 
+
+// ==========================================================
+// INSTALAR
+// ==========================================================
+
 self.addEventListener("install", event => {
+
+    console.log("Service Worker instalando...");
+
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(ARCHIVOS))
-            .then(() => self.skipWaiting())
+        caches
+            .open(CACHE_NAME)
+            .then(cache => cache.addAll(ARCHIVOS_CACHE))
     );
+
+    self.skipWaiting();
+
 });
 
+
+// ==========================================================
+// ACTIVAR
+// ==========================================================
+
 self.addEventListener("activate", event => {
+
+    console.log("Service Worker activado.");
+
     event.waitUntil(
-        caches.keys().then(keys =>
-            Promise.all(
-                keys
-                    .filter(key => key !== CACHE_NAME)
-                    .map(key => caches.delete(key))
-            )
-        ).then(() => self.clients.claim())
+        caches
+            .keys()
+            .then(nombres => {
+
+                return Promise.all(
+                    nombres
+                        .filter(nombre => nombre !== CACHE_NAME)
+                        .map(nombre => caches.delete(nombre))
+                );
+
+            })
     );
+
+    self.clients.claim();
+
 });
+
+
+// ==========================================================
+// FETCH
+// ==========================================================
 
 self.addEventListener("fetch", event => {
 
     const request = event.request;
 
-    // Ignorar cosas que no sean HTTP/HTTPS
-    if (!request.url.startsWith("http://") &&
-        !request.url.startsWith("https://")) {
-        return;
-    }
-
-    // Solo nos interesa GET
     if (request.method !== "GET") {
         return;
     }
 
     const url = new URL(request.url);
 
-    // ==========================================
-    // API: INTERNET -> guardar / OFFLINE -> usar
-    // ==========================================
+
+    // ======================================================
+    // MUY IMPORTANTE:
+    // NO INTERCEPTAR NINGUNA PETICIÓN DE LA API
+    // ======================================================
 
     if (url.pathname.startsWith("/api/")) {
-
-        event.respondWith(
-            fetch(request)
-                .then(response => {
-
-                    if (response.ok) {
-                        const copia = response.clone();
-
-                        caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(request, copia);
-                            });
-                    }
-
-                    return response;
-                })
-                .catch(() => {
-                    return caches.match(request);
-                })
-        );
-
         return;
     }
 
-    // ==========================================
-    // PÁGINA Y ARCHIVOS
-    // ==========================================
+
+    // ======================================================
+    // NO INTERCEPTAR OTROS DOMINIOS
+    // ======================================================
+
+    if (url.origin !== self.location.origin) {
+        return;
+    }
+
+
+    // ======================================================
+    // ARCHIVOS DEL FRONTEND
+    // NETWORK FIRST → CACHE COMO RESPALDO
+    // ======================================================
 
     event.respondWith(
-        caches.match(request)
+
+        fetch(request)
             .then(response => {
-                return response || fetch(request);
+
+                if (response && response.ok) {
+
+                    const copia = response.clone();
+
+                    caches
+                        .open(CACHE_NAME)
+                        .then(cache => {
+                            cache.put(request, copia);
+                        })
+                        .catch(error => {
+                            console.warn(
+                                "No se pudo guardar en cache:",
+                                error
+                            );
+                        });
+
+                }
+
+                return response;
+
             })
+            .catch(() => {
+
+                console.log(
+                    "📴 Usando archivo desde cache:",
+                    request.url
+                );
+
+                return caches.match(request);
+
+            })
+
     );
+
 });
