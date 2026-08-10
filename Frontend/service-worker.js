@@ -6,17 +6,14 @@ const ARCHIVOS = [
     "/service-worker.js"
 ];
 
-// INSTALACIÓN
 self.addEventListener("install", event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(ARCHIVOS))
+            .then(() => self.skipWaiting())
     );
-
-    self.skipWaiting();
 });
 
-// ACTIVACIÓN
 self.addEventListener("activate", event => {
     event.waitUntil(
         caches.keys().then(keys =>
@@ -25,70 +22,64 @@ self.addEventListener("activate", event => {
                     .filter(key => key !== CACHE_NAME)
                     .map(key => caches.delete(key))
             )
-        )
+        ).then(() => self.clients.claim())
     );
-
-    self.clients.claim();
 });
 
-// PETICIONES
 self.addEventListener("fetch", event => {
 
-    // Solo nos interesan peticiones GET
-    if (event.request.method !== "GET") {
+    const request = event.request;
+
+    // Ignorar cosas que no sean HTTP/HTTPS
+    if (!request.url.startsWith("http://") &&
+        !request.url.startsWith("https://")) {
         return;
     }
 
-    const url = new URL(event.request.url);
+    // Solo nos interesa GET
+    if (request.method !== "GET") {
+        return;
+    }
 
-    // API: primero intenta Internet.
-    // Si no hay Internet, utiliza la copia guardada.
+    const url = new URL(request.url);
+
+    // ==========================================
+    // API: INTERNET -> guardar / OFFLINE -> usar
+    // ==========================================
+
     if (url.pathname.startsWith("/api/")) {
 
         event.respondWith(
-            fetch(event.request)
+            fetch(request)
                 .then(response => {
 
-                    // Guardar una copia de la respuesta
-                    const copia = response.clone();
+                    if (response.ok) {
+                        const copia = response.clone();
 
-                    caches.open(CACHE_NAME)
-                        .then(cache => {
-                            cache.put(event.request, copia);
-                        });
+                        caches.open(CACHE_NAME)
+                            .then(cache => {
+                                cache.put(request, copia);
+                            });
+                    }
 
                     return response;
                 })
                 .catch(() => {
-                    return caches.match(event.request);
+                    return caches.match(request);
                 })
         );
 
         return;
     }
 
-    // Archivos de la aplicación:
-    // primero busca una copia local.
+    // ==========================================
+    // PÁGINA Y ARCHIVOS
+    // ==========================================
+
     event.respondWith(
-        caches.match(event.request)
-            .then(cachedResponse => {
-
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-
-                return fetch(event.request)
-                    .then(response => {
-
-                        const copia = response.clone();
-
-                        caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(event.request, copia);
-                            });
-
-                        return response;
-                    });
+        caches.match(request)
+            .then(response => {
+                return response || fetch(request);
             })
     );
 });
