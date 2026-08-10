@@ -1,4 +1,4 @@
-const CACHE_NAME = "monitoreo-ambiental-v2";
+const CACHE_NAME = 'monitoreo-ambiental-v2';
 
 const ARCHIVOS = [
     "/",

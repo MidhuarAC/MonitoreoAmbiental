@@ -783,6 +783,14 @@
             >
                 📥 Descargar Excel
             </button>
+            
+            <button
+                class="btn-importar"
+                id="btnSincronizarOffline"
+                onclick="sincronizarDatosOffline()"
+            >
+                💾 Actualizar datos offline
+            </button>
 
         </div>
 
@@ -1119,7 +1127,346 @@ let ultimaConsulta = null;
 
 let archivoSeleccionado = null;
 
+// ==========================================================
+// BASE LOCAL OFFLINE
+// ==========================================================
 
+const DB_NAME = "MonitoreoAmbientalOffline";
+const DB_VERSION = 1;
+
+let dbOffline = null;
+
+
+// ==========================================================
+// ABRIR BASE LOCAL
+// ==========================================================
+
+function abrirBaseOffline() {
+
+    return new Promise((resolve, reject) => {
+
+        const solicitud = indexedDB.open(
+            DB_NAME,
+            DB_VERSION
+        );
+
+        solicitud.onupgradeneeded = function(event) {
+
+            const db = event.target.result;
+
+            if (!db.objectStoreNames.contains("estaciones")) {
+
+                db.createObjectStore(
+                    "estaciones",
+                    {
+                        keyPath: "codigo"
+                    }
+                );
+
+            }
+
+            if (!db.objectStoreNames.contains("mediciones")) {
+
+                db.createObjectStore(
+                    "mediciones",
+                    {
+                        keyPath: "id",
+                        autoIncrement: true
+                    }
+                );
+
+            }
+
+        };
+
+        solicitud.onsuccess = function(event) {
+
+            dbOffline = event.target.result;
+
+            resolve(dbOffline);
+
+        };
+
+        solicitud.onerror = function(event) {
+
+            reject(event.target.error);
+
+        };
+
+    });
+
+}
+
+// ==========================================================
+// GUARDAR ESTACIONES OFFLINE
+// ==========================================================
+
+async function guardarEstacionesOffline(estaciones) {
+
+    if (!dbOffline) {
+        await abrirBaseOffline();
+    }
+
+    return new Promise((resolve, reject) => {
+
+        const transaccion =
+            dbOffline.transaction(
+                "estaciones",
+                "readwrite"
+            );
+
+        const store =
+            transaccion.objectStore(
+                "estaciones"
+            );
+
+        store.clear();
+
+        estaciones.forEach(estacion => {
+
+            store.put(estacion);
+
+        });
+
+        transaccion.oncomplete = function() {
+
+            resolve();
+
+        };
+
+        transaccion.onerror = function(event) {
+
+            reject(event.target.error);
+
+        };
+
+    });
+
+}
+
+// ==========================================================
+// GUARDAR MEDICIONES OFFLINE
+// ==========================================================
+
+async function guardarMedicionesOffline(datos) {
+
+    if (!dbOffline) {
+        await abrirBaseOffline();
+    }
+
+    return new Promise((resolve, reject) => {
+
+        const transaccion =
+            dbOffline.transaction(
+                "mediciones",
+                "readwrite"
+            );
+
+        const store =
+            transaccion.objectStore(
+                "mediciones"
+            );
+
+        store.clear();
+
+        datos.forEach(dato => {
+
+            store.add(dato);
+
+        });
+
+        transaccion.oncomplete = function() {
+
+            resolve();
+
+        };
+
+        transaccion.onerror = function(event) {
+
+            reject(event.target.error);
+
+        };
+
+    });
+
+}
+// ==========================================================
+// SINCRONIZAR TODOS LOS DATOS
+// ==========================================================
+
+async function sincronizarDatosOffline() {
+
+    const boton =
+        document.getElementById(
+            "btnSincronizarOffline"
+        );
+
+    boton.disabled = true;
+
+    boton.textContent =
+        "⏳ Descargando...";
+
+    mostrarEstado(
+        "Descargando todos los datos para uso offline..."
+    );
+
+    try {
+
+        await abrirBaseOffline();
+
+        // -------------------------------
+        // ESTACIONES
+        // -------------------------------
+
+        const respuestaEstaciones =
+            await fetch(
+                `${API_URL}/api/estaciones`
+            );
+
+        if (!respuestaEstaciones.ok) {
+
+            throw new Error(
+                "No se pudieron descargar las estaciones."
+            );
+
+        }
+
+        const estaciones =
+            await respuestaEstaciones.json();
+
+        await guardarEstacionesOffline(
+            estaciones
+        );
+
+
+        // -------------------------------
+        // MEDICIONES
+        // -------------------------------
+
+        const respuestaDatos =
+            await fetch(
+                `${API_URL}/api/datos-offline`
+            );
+
+        if (!respuestaDatos.ok) {
+
+            throw new Error(
+                "No se pudieron descargar las mediciones."
+            );
+
+        }
+
+        const resultado =
+            await respuestaDatos.json();
+
+        if (resultado.estado !== "OK") {
+
+            throw new Error(
+                resultado.detalle ||
+                "Error descargando mediciones."
+            );
+
+        }
+
+        await guardarMedicionesOffline(
+            resultado.datos
+        );
+
+
+        // -------------------------------
+        // GUARDAR FECHA DE SINCRONIZACIÓN
+        // -------------------------------
+
+        localStorage.setItem(
+            "ultimaSincronizacionOffline",
+            new Date().toISOString()
+        );
+
+
+        mostrarEstado(
+            `✅ Datos offline actualizados: ${resultado.total} mediciones.`
+        );
+
+        boton.textContent =
+            "✅ Datos offline actualizados";
+
+
+        console.log(
+            "Datos guardados offline:",
+            resultado.total
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Error sincronizando offline:",
+            error
+        );
+
+        mostrarEstado(
+            "❌ " + error.message,
+            true
+        );
+
+        boton.textContent =
+            "💾 Actualizar datos offline";
+
+    }
+
+    finally {
+
+        boton.disabled = false;
+
+    }
+
+}
+// ==========================================================
+// LEER ESTACIONES DESDE INDEXEDDB
+// ==========================================================
+
+async function obtenerEstacionesOffline() {
+
+    if (!dbOffline) {
+        await abrirBaseOffline();
+    }
+
+    return new Promise((resolve, reject) => {
+
+        const transaccion =
+            dbOffline.transaction(
+                "estaciones",
+                "readonly"
+            );
+
+        const store =
+            transaccion.objectStore(
+                "estaciones"
+            );
+
+        const solicitud =
+            store.getAll();
+
+        solicitud.onsuccess = function() {
+
+            resolve(
+                solicitud.result
+            );
+
+        };
+
+        solicitud.onerror = function(event) {
+
+            reject(
+                event.target.error
+            );
+
+        };
+
+    });
+
+}
 // ==========================================================
 // CARGAR ESTACIONES
 // ==========================================================
@@ -1131,25 +1478,21 @@ async function cargarEstaciones() {
             "estacion"
         );
 
-
     try {
 
         console.log(
             "Cargando estaciones..."
         );
 
-
         const respuesta =
             await fetch(
                 `${API_URL}/api/estaciones`
             );
 
-
         console.log(
             "Respuesta estaciones:",
             respuesta.status
         );
-
 
         if (!respuesta.ok) {
 
@@ -1159,16 +1502,13 @@ async function cargarEstaciones() {
 
         }
 
-
         const estaciones =
             await respuesta.json();
-
 
         console.log(
             "Estaciones recibidas:",
             estaciones
         );
-
 
         if (!Array.isArray(estaciones)) {
 
@@ -1177,10 +1517,9 @@ async function cargarEstaciones() {
             );
 
         }
-
+        await guardarEstacionesOffline(estaciones);
 
         select.innerHTML = "";
-
 
         if (estaciones.length === 0) {
 
@@ -1198,44 +1537,13 @@ async function cargarEstaciones() {
                 opcion
             );
 
-
             mostrarEstado(
                 "No existen estaciones activas.",
                 true
             );
 
             return;
-
         }
-
-
-        // ==================================================
-        // CREAR PUNTOS
-        // ==================================================
-
-        estaciones.forEach(
-            estacion => {
-
-                const opcion =
-                    document.createElement(
-                        "option"
-                    );
-
-
-                opcion.value =
-                    estacion.codigo;
-
-
-                opcion.textContent =
-                    `${estacion.codigo} - ${estacion.nombre}`;
-
-
-                select.appendChild(
-                    opcion
-                );
-
-            }
-        );
 
 
         // ==================================================
@@ -1258,40 +1566,90 @@ async function cargarEstaciones() {
 
     catch (error) {
 
-        console.error(
-            "ERROR:",
-            error
-        );
+    console.warn(
+        "Internet no disponible. Buscando estaciones offline..."
+    );
 
+    try {
+
+        const estaciones =
+            await obtenerEstacionesOffline();
+
+        if (!estaciones || estaciones.length === 0) {
+
+            throw new Error(
+                "No hay estaciones guardadas offline."
+            );
+
+        }
 
         select.innerHTML = "";
 
+        estaciones.forEach(
+            estacion => {
+
+                const opcion =
+                    document.createElement(
+                        "option"
+                    );
+
+                opcion.value =
+                    estacion.codigo;
+
+                opcion.textContent =
+                    `${estacion.codigo} - ${estacion.nombre}`;
+
+                select.appendChild(
+                    opcion
+                );
+
+            }
+        );
+
+        select.selectedIndex = 0;
+
+        mostrarEstado(
+            `📱 Modo offline: ${estaciones.length} puntos disponibles.`
+        );
+
+        console.log(
+            "Estaciones cargadas desde IndexedDB:",
+            estaciones
+        );
+
+    }
+
+    catch (errorOffline) {
+
+        console.error(
+            "ERROR OFFLINE:",
+            errorOffline
+        );
+
+        select.innerHTML = "";
 
         const opcion =
             document.createElement(
                 "option"
             );
 
-
         opcion.value = "";
 
         opcion.textContent =
-            "Error al cargar puntos";
-
+            "No hay datos offline";
 
         select.appendChild(
             opcion
         );
 
-
         mostrarEstado(
-            "❌ Error al cargar los puntos: " +
-            error.message,
+            "❌ No hay estaciones guardadas para consultar offline.",
             true
         );
 
     }
 
+}
 }
 
 

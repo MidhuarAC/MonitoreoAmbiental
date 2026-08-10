@@ -159,7 +159,65 @@ def obtener_estaciones():
             "detalle": str(error)
 
         }
+# ============================================================
+# DESCARGAR TODOS LOS DATOS PARA USO OFFLINE
+# ============================================================
 
+@app.get("/api/datos-offline")
+def obtener_datos_offline():
+
+    try:
+
+        with engine.connect() as conexion:
+
+            consulta = text("""
+                SELECT
+                    e.codigo AS estacion,
+                    e.nombre AS nombre_estacion,
+                    m.fecha_hora,
+                    m.ph,
+                    m.conductividad,
+                    m.caudal,
+                    m.tds,
+                    m.od,
+                    m.turbidez
+                FROM mediciones_agua m
+                INNER JOIN estaciones e
+                    ON m.estacion_id = e.id
+                WHERE e.activo = TRUE
+                ORDER BY e.codigo, m.fecha_hora
+            """)
+
+            resultado = conexion.execute(consulta)
+
+            datos = []
+
+            for fila in resultado:
+
+                datos.append({
+                    "estacion": fila.estacion,
+                    "nombre_estacion": fila.nombre_estacion,
+                    "fecha_hora": fila.fecha_hora,
+                    "ph": fila.ph,
+                    "conductividad": fila.conductividad,
+                    "caudal": fila.caudal,
+                    "tds": fila.tds,
+                    "od": fila.od,
+                    "turbidez": fila.turbidez
+                })
+
+        return {
+            "estado": "OK",
+            "total": len(datos),
+            "datos": datos
+        }
+
+    except Exception as error:
+
+        return {
+            "estado": "ERROR",
+            "detalle": str(error)
+        }
 
 # ============================================================
 # MEDICIONES
