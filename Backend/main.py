@@ -1,9 +1,12 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from datetime import datetime
 import pandas as pd
 import io
+import os
 
 from Backend.database import engine
 
@@ -26,18 +29,27 @@ app.add_middleware(
 )
 
 # ============================================================
+# FRONTEND
+# ============================================================
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(BASE_DIR, "Frontend")
+
+app.mount(
+    "/frontend",
+    StaticFiles(directory=FRONTEND_DIR),
+    name="frontend"
+)
+
+# ============================================================
 # INICIO
 # ============================================================
 
 @app.get("/")
 def inicio():
-
-    return {
-        "mensaje": "Sistema de Monitoreo Ambiental funcionando",
-        "version": "0.1.0",
-        "estado": "OK"
-    }
-
+    return FileResponse(
+        os.path.join(FRONTEND_DIR, "index.html")
+    )
 
 # ============================================================
 # PRUEBA BASE DE DATOS
