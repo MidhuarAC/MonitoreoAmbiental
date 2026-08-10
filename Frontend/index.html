@@ -1135,7 +1135,14 @@ const DB_NAME = "MonitoreoAmbientalOffline";
 const DB_VERSION = 1;
 
 let dbOffline = null;
-
+window.addEventListener("load", async () => {
+    try {
+        await abrirBaseOffline();
+        console.log("IndexedDB offline inicializado correctamente.");
+    } catch (error) {
+        console.error("Error inicializando IndexedDB:", error);
+    }
+});
 
 // ==========================================================
 // ABRIR BASE LOCAL
