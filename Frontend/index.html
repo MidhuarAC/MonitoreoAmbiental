@@ -2193,60 +2193,41 @@ async function obtenerDatos(
 async function consultarDatos() {
 
     const tipo =
-        document.getElementById(
-            "tipoConsulta"
-        ).value;
-
+        document.getElementById("tipoConsulta").value;
 
     const estacion =
-        document.getElementById(
-            "estacion"
-        ).value;
-
+        document.getElementById("estacion").value;
 
     const parametro =
-        document.getElementById(
-            "parametro"
-        ).value;
-
+        document.getElementById("parametro").value;
 
     const fechaInicio =
-        document.getElementById(
-            "fechaInicio"
-        ).value;
-
+        document.getElementById("fechaInicio").value;
 
     const fechaFin =
-        document.getElementById(
-            "fechaFin"
-        ).value;
-
+        document.getElementById("fechaFin").value;
 
     let resolucion =
-        document.getElementById(
-            "resolucion"
-        ).value;
+        document.getElementById("resolucion").value;
 
+
+    // ======================================================
+    // VALIDACIONES
+    // ======================================================
 
     if (!estacion) {
 
-        alert(
-            "Selecciona un punto de monitoreo."
-        );
+        alert("Selecciona un punto de monitoreo.");
 
         return;
-
     }
 
 
     if (!fechaInicio || !fechaFin) {
 
-        alert(
-            "Selecciona las fechas."
-        );
+        alert("Selecciona las fechas.");
 
         return;
-
     }
 
 
@@ -2257,7 +2238,6 @@ async function consultarDatos() {
         );
 
         return;
-
     }
 
 
@@ -2268,14 +2248,12 @@ async function consultarDatos() {
                 fechaInicio,
                 fechaFin
             );
-
     }
 
 
     document.getElementById(
         "cargando"
-    ).style.display =
-        "block";
+    ).style.display = "block";
 
 
     mostrarEstado(
@@ -2284,6 +2262,274 @@ async function consultarDatos() {
 
 
     try {
+
+        // ==================================================
+        // MODO OFFLINE
+        // ==================================================
+
+        if (!navigator.onLine) {
+
+            console.log(
+                "📴 SIN INTERNET → CONSULTANDO INDEXEDDB"
+            );
+
+
+            const datosOffline =
+                await obtenerMedicionesOffline();
+
+
+            console.log(
+                "📦 Datos disponibles offline:",
+                datosOffline.length
+            );
+
+
+            // ----------------------------------------------
+            // MAPEAR PARAMETRO
+            // ----------------------------------------------
+
+            const mapaParametros = {
+
+                "pH": "ph",
+
+                "ph": "ph",
+
+                "Conductividad": "conductividad",
+
+                "conductividad": "conductividad",
+
+                "Caudal": "caudal",
+
+                "caudal": "caudal",
+
+                "TDS": "tds",
+
+                "tds": "tds",
+
+                "OD": "od",
+
+                "od": "od",
+
+                "Turbidez": "turbidez",
+
+                "turbidez": "turbidez"
+
+            };
+
+
+            const campoParametro =
+                mapaParametros[parametro] ||
+                String(parametro).toLowerCase();
+
+
+            // ----------------------------------------------
+            // FECHAS
+            // ----------------------------------------------
+
+            const fechaInicial =
+                new Date(
+                    fechaInicio + "T00:00:00"
+                );
+
+
+            const fechaFinal =
+                new Date(
+                    fechaFin + "T23:59:59"
+                );
+
+
+            // ----------------------------------------------
+            // FILTRAR DATOS
+            // ----------------------------------------------
+
+            const datosFiltrados =
+                datosOffline.filter(dato => {
+
+                    const estacionDato =
+                        String(
+                            dato.estacion ?? ""
+                        )
+                        .trim()
+                        .toLowerCase();
+
+
+                    const estacionSeleccionada =
+                        String(estacion)
+                        .trim()
+                        .toLowerCase();
+
+
+                    const fechaDato =
+                        new Date(
+                            dato.fecha_hora
+                        );
+
+
+                    const coincideEstacion =
+                        estacionDato ===
+                        estacionSeleccionada;
+
+
+                    const coincideFecha =
+                        !isNaN(
+                            fechaDato.getTime()
+                        ) &&
+                        fechaDato >= fechaInicial &&
+                        fechaDato <= fechaFinal;
+
+
+                    const valor =
+                        dato[campoParametro];
+
+
+                    const tieneValor =
+                        valor !== null &&
+                        valor !== undefined &&
+                        valor !== "";
+
+
+                    return (
+                        coincideEstacion &&
+                        coincideFecha &&
+                        tieneValor
+                    );
+
+                });
+
+
+            console.log(
+                "📊 Mediciones encontradas offline:",
+                datosFiltrados.length
+            );
+
+
+            // ----------------------------------------------
+            // CONVERTIR AL FORMATO DE RESULTADO
+            // ----------------------------------------------
+
+            const datosResultado =
+                datosFiltrados.map(dato => {
+
+                    return {
+
+                        estacion:
+                            dato.estacion,
+
+                        nombre_estacion:
+                            dato.nombre_estacion,
+
+                        fecha_hora:
+                            dato.fecha_hora,
+
+                        parametro:
+                            parametro,
+
+                        valor:
+                            Number(
+                                dato[campoParametro]
+                            ),
+
+                        ph:
+                            dato.ph,
+
+                        conductividad:
+                            dato.conductividad,
+
+                        caudal:
+                            dato.caudal,
+
+                        tds:
+                            dato.tds,
+
+                        od:
+                            dato.od,
+
+                        turbidez:
+                            dato.turbidez,
+
+                        id:
+                            dato.id
+
+                    };
+
+                });
+
+
+            // ----------------------------------------------
+            // RESULTADO OFFLINE
+            // ----------------------------------------------
+
+            const resultadoOffline = {
+
+                estado: "OK",
+
+                origen: "offline",
+
+                estacion: estacion,
+
+                parametro: parametro,
+
+                fecha_inicio: fechaInicio,
+
+                fecha_fin: fechaFin,
+
+                resolucion: resolucion,
+
+                total:
+                    datosResultado.length,
+
+                datos:
+                    datosResultado
+
+            };
+
+
+            console.log(
+                "✅ RESULTADO OFFLINE:",
+                resultadoOffline
+            );
+
+
+            // ----------------------------------------------
+            // MOSTRAR RESULTADO
+            // ----------------------------------------------
+
+            ultimaConsulta = {
+
+                tipo: "normal",
+
+                resultado:
+                    resultadoOffline
+
+            };
+
+
+            mostrarResultadoNormal(
+                resultadoOffline
+            );
+
+
+            document.getElementById(
+                "btnDescargar"
+            ).disabled = true;
+
+
+            mostrarEstado(
+                `📴 Consulta offline completada. ${datosResultado.length} mediciones encontradas.`
+            );
+
+
+            return;
+        }
+
+
+        // ==================================================
+        // MODO ONLINE
+        // ==================================================
+
+        console.log(
+            "🌐 INTERNET DISPONIBLE → CONSULTANDO API"
+        );
 
 
         if (tipo === "normal") {
@@ -2308,7 +2554,8 @@ async function consultarDatos() {
 
                 tipo: "normal",
 
-                resultado: resultado
+                resultado:
+                    resultado
 
             };
 
@@ -2323,6 +2570,7 @@ async function consultarDatos() {
             ).disabled = false;
 
         }
+
 
         else {
 
@@ -2345,7 +2593,6 @@ async function consultarDatos() {
                 );
 
                 return;
-
             }
 
 
@@ -2356,7 +2603,6 @@ async function consultarDatos() {
                 );
 
                 return;
-
             }
 
 
@@ -2373,7 +2619,6 @@ async function consultarDatos() {
                         fechaInicio2,
                         fechaFin2
                     );
-
             }
 
 
@@ -2413,9 +2658,11 @@ async function consultarDatos() {
 
                 tipo: "comparar",
 
-                resultado1: resultado1,
+                resultado1:
+                    resultado1,
 
-                resultado2: resultado2
+                resultado2:
+                    resultado2
 
             };
 
@@ -2434,9 +2681,13 @@ async function consultarDatos() {
 
     }
 
+
     catch (error) {
 
-        console.error(error);
+        console.error(
+            "❌ ERROR CONSULTANDO:",
+            error
+        );
 
 
         mostrarEstado(
@@ -2449,12 +2700,12 @@ async function consultarDatos() {
 
     }
 
+
     finally {
 
         document.getElementById(
             "cargando"
-        ).style.display =
-            "none";
+        ).style.display = "none";
 
     }
 
