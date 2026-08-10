@@ -1527,6 +1527,18 @@ async function cargarEstaciones() {
         await guardarEstacionesOffline(estaciones);
 
         select.innerHTML = "";
+        estaciones.forEach(estacion => {
+
+            const opcion = document.createElement("option");
+
+            opcion.value = estacion.codigo;
+
+            opcion.textContent =
+                `${estacion.codigo} - ${estacion.nombre}`;
+
+            select.appendChild(opcion);
+
+        });
 
         if (estaciones.length === 0) {
 
