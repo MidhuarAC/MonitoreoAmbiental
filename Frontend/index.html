@@ -1866,37 +1866,261 @@ async function obtenerDatos(
     );
 
 
-    const respuesta =
-        await fetch(url);
+    // ======================================================
+    // 1. INTENTAR CONSULTAR LA API
+    // ======================================================
+
+    try {
+
+        const respuesta =
+            await fetch(url);
 
 
-    if (!respuesta.ok) {
+        if (!respuesta.ok) {
 
-        throw new Error(
-            `Error HTTP ${respuesta.status}`
+            throw new Error(
+                `Error HTTP ${respuesta.status}`
+            );
+
+        }
+
+
+        const resultado =
+            await respuesta.json();
+
+
+        if (resultado.estado !== "OK") {
+
+            throw new Error(
+                resultado.detalle ||
+                "Error consultando datos."
+            );
+
+        }
+
+
+        console.log(
+            "✅ Datos obtenidos desde PostgreSQL/Render:",
+            resultado.datos?.length
         );
+
+
+        return resultado;
 
     }
 
 
-    const resultado =
-        await respuesta.json();
+    // ======================================================
+    // 2. SI FALLA INTERNET / RENDER → USAR INDEXEDDB
+    // ======================================================
 
+    catch (error) {
 
-    if (resultado.estado !== "OK") {
-
-        throw new Error(
-            resultado.detalle ||
-            "Error consultando datos."
+        console.warn(
+            "⚠️ API no disponible. Usando datos offline...",
+            error
         );
 
+
+        try {
+
+            const datosOffline =
+                await obtenerMedicionesOffline();
+
+
+            console.log(
+                "📦 Mediciones disponibles offline:",
+                datosOffline.length
+            );
+
+
+            if (
+                !Array.isArray(datosOffline) ||
+                datosOffline.length === 0
+            ) {
+
+                throw new Error(
+                    "No existen mediciones guardadas offline."
+                );
+
+            }
+
+
+            // ==================================================
+            // FUNCIONES AUXILIARES PARA IDENTIFICAR CAMPOS
+            // ==================================================
+
+            function obtenerEstacionDato(dato) {
+
+                return (
+                    dato.estacion ??
+                    dato.codigo_estacion ??
+                    dato.codigoEstacion ??
+                    dato.codigo ??
+                    dato.punto_monitoreo ??
+                    dato.puntoMonitoreo ??
+                    dato.station ??
+                    ""
+                );
+
+            }
+
+
+            function obtenerParametroDato(dato) {
+
+                return (
+                    dato.parametro ??
+                    dato.parameter ??
+                    dato.tipo_parametro ??
+                    dato.tipoParametro ??
+                    ""
+                );
+
+            }
+
+
+            function obtenerFechaDato(dato) {
+
+                return (
+                    dato.fecha_hora ??
+                    dato.fechaHora ??
+                    dato.fecha ??
+                    dato.datetime ??
+                    dato.timestamp ??
+                    dato.fecha_medicion ??
+                    dato.fechaMedicion ??
+                    ""
+                );
+
+            }
+
+
+            // ==================================================
+            // CONVERTIR FECHAS
+            // ==================================================
+
+            const inicio =
+                new Date(
+                    fechaInicio + "T00:00:00"
+                );
+
+
+            const fin =
+                new Date(
+                    fechaFin + "T23:59:59"
+                );
+
+
+            // ==================================================
+            // FILTRAR DATOS OFFLINE
+            // ==================================================
+
+            const datosFiltrados =
+                datosOffline.filter(dato => {
+
+                    const estacionDato =
+                        String(
+                            obtenerEstacionDato(dato)
+                        ).trim().toLowerCase();
+
+
+                    const estacionBuscada =
+                        String(
+                            estacion
+                        ).trim().toLowerCase();
+
+
+                    const parametroDato =
+                        String(
+                            obtenerParametroDato(dato)
+                        ).trim().toLowerCase();
+
+
+                    const parametroBuscado =
+                        String(
+                            parametro
+                        ).trim().toLowerCase();
+
+
+                    const fechaDatoTexto =
+                        obtenerFechaDato(dato);
+
+
+                    const fechaDato =
+                        new Date(
+                            fechaDatoTexto
+                        );
+
+
+                    const coincideEstacion =
+                        estacionDato ===
+                        estacionBuscada;
+
+
+                    const coincideParametro =
+                        parametroDato ===
+                        parametroBuscado;
+
+
+                    const coincideFecha =
+                        !isNaN(fechaDato.getTime()) &&
+                        fechaDato >= inicio &&
+                        fechaDato <= fin;
+
+
+                    return (
+                        coincideEstacion &&
+                        coincideParametro &&
+                        coincideFecha
+                    );
+
+                });
+
+
+            console.log(
+                "📦 Datos filtrados offline:",
+                datosFiltrados.length
+            );
+
+
+            // ==================================================
+            // DEVOLVER MISMA ESTRUCTURA QUE LA API
+            // ==================================================
+
+            return {
+
+                estado: "OK",
+
+                origen: "offline",
+
+                total:
+                    datosFiltrados.length,
+
+                datos:
+                    datosFiltrados
+
+            };
+
+        }
+
+
+        catch (errorOffline) {
+
+            console.error(
+                "❌ Error consultando datos offline:",
+                errorOffline
+            );
+
+
+            throw new Error(
+                "No se pudo consultar ni en Render ni en los datos offline."
+            );
+
+        }
+
     }
-
-
-    return resultado;
 
 }
-
 
 // ==========================================================
 // CONSULTAR
