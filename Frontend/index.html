@@ -1298,6 +1298,51 @@ async function guardarMedicionesOffline(datos) {
 
 }
 // ==========================================================
+// LEER MEDICIONES DESDE INDEXEDDB
+// ==========================================================
+
+async function obtenerMedicionesOffline() {
+
+    if (!dbOffline) {
+        await abrirBaseOffline();
+    }
+
+    return new Promise((resolve, reject) => {
+
+        const transaccion =
+            dbOffline.transaction(
+                "mediciones",
+                "readonly"
+            );
+
+        const store =
+            transaccion.objectStore(
+                "mediciones"
+            );
+
+        const solicitud =
+            store.getAll();
+
+        solicitud.onsuccess = function() {
+
+            resolve(
+                solicitud.result
+            );
+
+        };
+
+        solicitud.onerror = function(event) {
+
+            reject(
+                event.target.error
+            );
+
+        };
+
+    });
+
+}
+// ==========================================================
 // SINCRONIZAR TODOS LOS DATOS
 // ==========================================================
 
@@ -1563,6 +1608,7 @@ async function cargarEstaciones() {
 
             return;
         }
+    
 
 
         // ==================================================
