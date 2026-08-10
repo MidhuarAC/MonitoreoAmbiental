@@ -51,6 +51,22 @@ def inicio():
         os.path.join(FRONTEND_DIR, "index.html")
     )
 
+
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse(
+        os.path.join(FRONTEND_DIR, "manifest.json"),
+        media_type="application/manifest+json"
+    )
+
+
+@app.get("/service-worker.js")
+def service_worker():
+    return FileResponse(
+        os.path.join(FRONTEND_DIR, "service-worker.js"),
+        media_type="application/javascript"
+    )
+
 # ============================================================
 # PRUEBA BASE DE DATOS
 # ============================================================

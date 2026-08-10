@@ -12,6 +12,9 @@
 
     <title>Monitoreo Ambiental</title>
 
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#17613d">
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -2991,6 +2994,27 @@ document.addEventListener(
 
 </script>
 
+<script>
+if ("serviceWorker" in navigator) {
+
+    window.addEventListener("load", () => {
+
+        navigator.serviceWorker
+            .register("/service-worker.js")
+            .then(() => {
+                console.log("Service Worker registrado");
+            })
+            .catch(error => {
+                console.error(
+                    "Error registrando Service Worker:",
+                    error
+                );
+            });
+
+    });
+
+}
+</script>
 
 </body>
 
