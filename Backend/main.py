@@ -420,6 +420,22 @@ async def importar_excel(
             for columna in df.columns
         ]
 
+        # ----------------------------------------------------
+        # NORMALIZAR NOMBRES DE COLUMNAS
+        # ----------------------------------------------------
+        # El importador acepta pH, ph o PH y lo deja como pH.
+        # Las demás columnas conservan su nombre esperado.
+        renombrar_columnas = {}
+
+        for columna in df.columns:
+            columna_limpia = str(columna).strip()
+
+            if columna_limpia.lower() == "ph":
+                renombrar_columnas[columna] = "pH"
+
+        if renombrar_columnas:
+            df = df.rename(columns=renombrar_columnas)
+
 
         # ----------------------------------------------------
         # COLUMNAS OBLIGATORIAS
@@ -570,6 +586,27 @@ async def importar_excel(
         # ====================================================
 
         with engine.begin() as conexion:
+
+            # ------------------------------------------------
+            # SINCRONIZAR AUTOMÁTICAMENTE LA SECUENCIA DEL ID
+            # ------------------------------------------------
+            # Evita errores como:
+            # "duplicate key value violates unique constraint
+            # mediciones_agua_pkey / Key (id)=(1) already exists"
+            #
+            # No borra ni modifica las mediciones existentes.
+            # Solo hace que PostgreSQL continúe el ID desde el
+            # siguiente valor disponible.
+            conexion.execute(
+                text("""
+                    SELECT setval(
+                        pg_get_serial_sequence('mediciones_agua', 'id'),
+                        COALESCE(MAX(id), 0) + 1,
+                        false
+                    )
+                    FROM mediciones_agua
+                """)
+            )
 
             for _, fila in df.iterrows():
 
