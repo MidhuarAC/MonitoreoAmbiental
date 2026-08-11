@@ -14,6 +14,7 @@
 
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#17613d">
+    <meta name="app-version" content="offline-v2">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -2039,10 +2040,26 @@ async function obtenerDatos(
 
     try {
 
-        const respuesta = await fetch(url, {
-            method: "GET",
-            cache: "no-store"
-        });
+        const controlador = new AbortController();
+
+        // En móviles, navigator.onLine puede seguir en true aunque
+        // realmente no exista acceso a Internet.
+        const temporizador = setTimeout(
+            () => controlador.abort(),
+            8000
+        );
+
+        let respuesta;
+
+        try {
+            respuesta = await fetch(url, {
+                method: "GET",
+                cache: "no-store",
+                signal: controlador.signal
+            });
+        } finally {
+            clearTimeout(temporizador);
+        }
 
         if (!respuesta.ok) {
             throw new Error(
@@ -3868,10 +3885,51 @@ async function subirExcel() {
 
 document.addEventListener(
     "DOMContentLoaded",
-    function() {
+    async function() {
+
+        // Si ya estamos sin Internet al abrir la página,
+        // usar IndexedDB directamente.
+        if (!navigator.onLine) {
+            modoOffline = true;
+
+            try {
+                const estaciones =
+                    await obtenerEstacionesOffline();
+
+                const select =
+                    document.getElementById("estacion");
+
+                select.innerHTML = "";
+
+                estaciones.forEach(estacion => {
+                    const opcion =
+                        document.createElement("option");
+
+                    opcion.value = estacion.codigo;
+                    opcion.textContent =
+                        `${estacion.codigo} - ${estacion.nombre}`;
+
+                    select.appendChild(opcion);
+                });
+
+                if (estaciones.length > 0) {
+                    select.selectedIndex = 0;
+
+                    mostrarEstado(
+                        `📱 Modo offline: ${estaciones.length} puntos disponibles.`
+                    );
+
+                    return;
+                }
+            } catch (error) {
+                console.warn(
+                    "No se pudieron cargar estaciones offline al iniciar:",
+                    error
+                );
+            }
+        }
 
         cargarEstaciones();
-
     }
 );
 
